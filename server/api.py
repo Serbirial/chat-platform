@@ -1,7 +1,7 @@
 import json
 
-from sanic import Sanic, Blueprint
-from sanic_openapi import swagger_blueprint
+from sanic import Sanic
+from asyncio import Queue
 # MODELS #
 from models import message
 
@@ -10,13 +10,16 @@ from blueprints.group import api
 
 # UTILS #
 from utils import db
-from utils import inmemory
+from utils import redis
+from utils import hashing
 
 # Webserver
 app = Sanic(__name__)
 
-# Add DB
-_db = inmemory.InMemoryDatabase()
+# Add DB, Redis, Hasher
+_db = db.DB(db.mariadb_pool(0)) # Create the connection to the DB
+_redis = redis.RDB
+_hasher = hashing.Hasher()
 
 # Add all the blueprints
 
@@ -28,12 +31,12 @@ app.blueprint(api)
 @app.on_request
 async def setup_db_connection(request):
     request.ctx.db = _db
+    request.ctx.redis = _redis
+    request.ctx.hasher = _hasher
 
-#@app.main_process_start
-#async def main_process_start(app):
-#    _db = db.DB(db.mariadb_pool(0)) # Create the connection to the DB
-#    _db = inmemory.InMemoryDatabase()
-#    app.ctx.db = _db
+@app.main_process_start
+async def main_process_start(app):
+    app.ctx.sse_queue = Queue()
 
 
 # Close the DB on exit
@@ -46,4 +49,4 @@ async def setup_db_connection(request):
 
 if __name__ == '__main__':
 
-    app.run(host='localhost', port=42042, debug=True)
+    app.run(host='localhost', port=42042, debug=False, access_log=False)
