@@ -2,10 +2,11 @@
 from sanic.blueprints import Blueprint
 from sanic.response import json
 
-from models.message import Message 
-from utils import id_generator
+from utils import id_generator, checks
 
 from sanic_openapi import doc
+
+from datetime import datetime
 
 # Create the main blueprint to work with
 blueprint = Blueprint('Message_API', url_prefix="/message")
@@ -17,21 +18,30 @@ def message_get(request, thread_id, message_id):
     db = request.ctx.db
     channel_or_user = thread_id # For readability 
 
-    # This is a temporary implementation for the inmemory database
-    data = db.get[channel_or_user]
-    try:
-        for msg in data:
-            if msg["id"] == message_id:
-                return json(msg)
+    data = db.query_row("SELECT * FROM messages WHERE (DMChannelID = ? OR channelID = ?) AND id = ?" , thread_id, message_id)
+    if not data:
         return json({"op": "void"}, status=404)
+    return json(data, status=200)
 
-    except KeyError:
-        return json({"op": "void"}, status=404)
 
 @blueprint.delete("/<thread_id:int>/delete/<message_id:int>", strict_slashes=True)
 @doc.summary("Deletes a message from a channel or DM.")
 def message_delete(request, thread_id, message_id):
-    pass
+    db = request.ctx.db
+    channel_or_user = thread_id # For readability 
+
+    data = db.query_row("SELECT id FROM messages WHERE (DMChannelID = ? OR channelID = ?) AND id = ?" , thread_id, message_id)
+    if not data:
+        return json({"op": "void"}, status=404)
+
+
+    if not checks.authenticated(request.json["auth"], id_generator.get_session_token(request.ctx.redis, request.json['author'])): # They are not authorized to do the action.
+        return json({"op": "unauthorized."}, status=401)
+    
+
+    
+    db.execute("DELETE FROM messages WHERE id = ?", message_id)
+    return json({"op": "deleted."}, status=200)
 
 
 
@@ -41,15 +51,22 @@ def message_send(request, thread_id):
     db = request.ctx.db
     channel_or_user = thread_id # For readability 
 
-    data = request.json
-    _id = id_generator.generate_basic_id([x['id'] for x in db.get[channel_or_user]]) # TODO: change according to mariadb 
-    # This is a temporary implementation for the inmemory database
-    db.insert[channel_or_user].append({
-        "content": data['content'],
-        "timestamp": None,
-        "parent_id": channel_or_user,
-        "id": _id
-    })
+    data = request.json # TODO: expect exact data
+
+    if not checks.authenticated(request.json["auth"], id_generator.get_session_token(request.ctx.redis, data['author'])): # They are not authorized to do the action.
+        return json({"op": "unauthorized."}, status=401)
+
+    _id = id_generator.generate_message_id(db) # Generate the UID  
+
+    timestamp = datetime.now().timestamp()
+
+    if db.query_row("SELECT id FROM DMChannels WHERE id = ?", channel_or_user): # its a DM channel (group chats)
+        query = "INSERT INTO messages (id, authorID, DMChannelID, content, sent_timestamp) VALUES (?,?,?,?,?)"
+    else: # its a normal channel (DMs and channels)
+        query = "INSERT INTO messages (id, authorID, channelID, content, sent_timestamp) VALUES (?,?,?,?,?)"
+
+    db.execute(query, _id, data['author'], thread_id, data['content'], timestamp)
+
     return json(
         {"op": "sent"},
         status=200
@@ -62,7 +79,7 @@ def message_mass_get(request, thread_id):
     db = request.ctx.db
     channel_or_user = thread_id # For readability 
 
-    # This is a temporary implementation for the inmemory database
-    data = db.get[channel_or_user]
+    data = db.query("SELECT * FROM messages WHERE (DMChannelID = ? OR channelID = ?) ORDER BY sent_timestamp DESC LIMIT 100" , thread_id, thread_id)
+
 
     return json(data)

@@ -1,12 +1,14 @@
 from sanic import Blueprint
 
 # Bits of the API
-from blueprints import message
+from blueprints import message, user
+from server.blueprints import sse
 
 
 
 
 # All of the API
 api = Blueprint.group(message.blueprint,
-                            
-                            url_prefix="/api")
+                      user.blueprint,
+                      #sse.blueprint,
+                      url_prefix="/api")
