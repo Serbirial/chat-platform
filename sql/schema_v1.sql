@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- MESSAGES:       ID, DMCHANNELID, CHANNELID, CONTENT, SENT_TIMESTAMP 
 -- DMCHANNELS:     ID
 -- DMCHANNELUSERS: PARENT_ID, USER_ID
+-- GUILDUSERS:     PARENT_ID, USER_ID
 -- -- -- -- -- -- 
 
 CREATE TABLE IF NOT EXISTS channels (
@@ -58,6 +59,15 @@ CREATE TABLE DMchannelUsers (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE guildUsers (
+  parent_id bigint unsigned NOT NULL, -- This would be the guild's ID
+  user_id bigint unsigned NOT NULL,
+
+  PRIMARY KEY (parent_id, user_id),
+  FOREIGN KEY (parent_id) REFERENCES guilds(id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 
 CREATE TABLE messages (
   id bigint unsigned NOT NULL,
@@ -69,7 +79,7 @@ CREATE TABLE messages (
 
   PRIMARY KEY (id),
   FOREIGN KEY (DMChannelID) REFERENCES DMChannels(id),   -- DM channel
-  FOREIGN KEY (channelID) REFERENCES channels(guild_id), -- Channel
+  FOREIGN KEY (channelID) REFERENCES channels(id), -- Channel
   FOREIGN KEY (authorID) REFERENCES users(id) ON DELETE SET NULL, -- User
   CONSTRAINT checkmessagesbeforerun CHECK (ISNULL(DMChannelID) + ISNULL(channelID) = 1) -- Exactly 1 parent ID exists
 );
@@ -81,14 +91,14 @@ CREATE TABLE messages (
 
 
 -- -- -- -- -- -- Special clarification is needed for all of this, even if only for myself.
-CREATE TABLE permissions ( -- On creation of every user, this table should be populated with data, this data is for guilds only.
-  guildID bigint unsigned,                  -- It can either be a guild
-  channelID bigint unsigned,                -- Or it can be a regular channel
+CREATE TABLE rolePermissions ( -- On creation of every role, this table should be populated with data, this data is for GUILD WIDE PERMS only.
+                                -- On creation of the GUILD, this table should be ppopulated with the DEFAULT permissions for a DEFAULT role.
+  guildID bigint unsigned,                   -- The guild .
+  roleID bigint unsigned,                    -- The role thats getting permissions.
 
-  authorID bigint unsigned NOT NULL         -- The user
 
   -- Default permissions
-  send_message boolean not null default 1,   -- A user can send messages by default.
+  send_message boolean not null default 1,    -- A user can send messages by default.
   view_channels boolean not null default 1,   -- A user can see open channels by default.
 
 
@@ -102,10 +112,52 @@ CREATE TABLE permissions ( -- On creation of every user, this table should be po
 
 
 
-  PRIMARY KEY (id),
-  FOREIGN KEY (guildID) REFERENCES guilds(id),   -- DM channel
-  FOREIGN KEY (channelID) REFERENCES channels(guild_id), -- Channel
-  FOREIGN KEY (authorID) REFERENCES users(id) ON DELETE CASCADE, -- User deleted, so detroy their permissions data.
-  CONSTRAINT checkpermsbeforerun CHECK (ISNULL(guildID) + ISNULL(channelID) = 1) -- Exactly 1 parent ID exists
+  PRIMARY KEY (guildID, roleID),
+  FOREIGN KEY (guildID) REFERENCES guilds(id) ON DELETE CASCADE,  -- Guild deleted, set the guild to NULL
 );
 -- -- -- -- -- -- 
+
+
+
+
+
+-- -- -- -- -- --
+-- ROLES:                       GUILD_ID, ID, _NAME
+-- PENDINGFRIENDREQUESTS:       ID, DMCHANNELID, CHANNELID, CONTENT, SENT_TIMESTAMP 
+-- FRIENDS:                      ID
+-- -- -- -- -- -- 
+
+CREATE TABLE roles (
+  guildID bigint unsigned,  
+  id bigint unsigned NOT NULL, 
+  _name text NOT NULL,
+
+
+  PRIMARY KEY (guildID, id),
+  FOREIGN KEY (parent_id) REFERENCES DMChannels(id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+
+
+CREATE TABLE pendingFriendRequests (
+  outgoingUserID bigint unsigned NOT NULL,
+  incomingUserID bigint unsigned NOT NULL,
+  start_timestamp bigint unsigned NOT NULL DEFAULT UNIX_TIMESTAMP(),
+
+  PRIMARY KEY (outgoingUserID, incomingUserID),
+  FOREIGN KEY (outgoingUserID) REFERENCES users(id),
+  FOREIGN KEY (incomingUserID) REFERENCES users(id)
+);
+
+
+
+CREATE TABLE friends (
+  userOneID bigint unsigned NOT NULL,
+  userTwoID bigint unsigned NOT NULL,
+  start_timestamp bigint unsigned NOT NULL DEFAULT UNIX_TIMESTAMP(),
+
+  PRIMARY KEY (userOneID, userTwoID),
+  FOREIGN KEY (userOneID) REFERENCES users(id),
+  FOREIGN KEY (userTwoID) REFERENCES users(id)
+);

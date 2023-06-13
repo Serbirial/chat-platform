@@ -1,9 +1,14 @@
-from models.user import User
+from dataclasses import dataclass
 
-class Message(object):
-    def __init__(self, id: int, parent_id: int, content: str, author_id: int, timestamp: float):
-        self.id = id
-        self.parent_id = parent_id
-        self.content = content
-        self.author = author_id
-        self.timestamp = timestamp
+from models.user import User
+from models.channel import Channel, DMChannel
+
+
+@dataclass
+class Message:
+    id: int
+    author: User
+    thread: Channel | DMChannel
+    parent_id: int
+    content: str
+    timestamp: float
